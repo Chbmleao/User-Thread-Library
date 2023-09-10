@@ -1,6 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include "../dccthread.h"
+#include "dccthread.h"
 
 void test(int dummy)
 {
@@ -10,6 +10,5 @@ void test(int dummy)
 
 int main(int argc, char **argv)
 {
-	printf("asfd");
 	dccthread_init(test, 1);
 }
