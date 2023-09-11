@@ -33,6 +33,7 @@ void dccthread_init(void (*func)(int), int param) {
   threads = dlist_create();
 
   managerThread = dccthread_create("manager", &managerFunction, 1);
+  dlist_pop_right(threads);
 
   dccthread_create("main", func, param);
 
@@ -70,15 +71,19 @@ void dccthread_yield(void) {
   if(currentThread) {
     getcontext(&currentThread->context);
     dlist_push_right(threads, currentThread);
+    swapcontext(&currentThread->context, &managerThread->context);
+  } else {
+    setcontext(&managerThread->context);
   }
-
-  setcontext(&managerThread->context);
 };
 
 dccthread_t * dccthread_self(void) {
   return currentThread;
 }
 
-// const char * dccthread_name(dccthread_t *tid) {
-//   return tid->name;
-// }
+const char * dccthread_name(dccthread_t *tid) {
+  if(tid) {
+    return tid->name;
+  } 
+  return NULL;
+}
