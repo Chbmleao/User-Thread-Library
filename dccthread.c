@@ -10,18 +10,21 @@ struct dccthread {
   char name[DCCTHREAD_MAX_NAME_SIZE];
   void (*func) (int);
   int param;
+  char waitingFor[DCCTHREAD_MAX_NAME_SIZE];
 };
 
 struct dlist *threads;
+struct dlist *concludedThreads;
+struct dlist *waitingThreads;
 dccthread_t *managerThread = NULL;
 dccthread_t *currentThread = NULL;
+
 
 void managerFunction(int running) {
   while (running) {
     if(!dlist_empty(threads)) {
       dccthread_t *thread = dlist_pop_left(threads);
       currentThread = thread;
-      
       setcontext(&thread->context);
     } else {
       running = 0;
@@ -31,6 +34,8 @@ void managerFunction(int running) {
 
 void dccthread_init(void (*func)(int), int param) {
   threads = dlist_create();
+  concludedThreads = dlist_create();
+  waitingThreads = dlist_create();
 
   managerThread = dccthread_create("manager", &managerFunction, 1);
   dlist_pop_right(threads);
@@ -86,4 +91,39 @@ const char * dccthread_name(dccthread_t *tid) {
     return tid->name;
   } 
   return NULL;
+}
+
+int waitingCompare(const void *thread, const void *threadName, void *userdata) { 
+  const dccthread_t *threadPtr = (const dccthread_t *)thread;
+  const char *name = (const char *)threadName;
+
+  return (threadPtr->waitingFor == name);
+}
+
+void dccthread_exit(void) {
+  getcontext(&currentThread->context);
+  dlist_push_right(concludedThreads, currentThread);
+
+  dccthread_t *waitingThread = dlist_find_remove(waitingThreads, currentThread, waitingCompare, NULL);
+  if(waitingThread) {
+    dlist_push_right(threads, waitingThread);
+  }
+
+  setcontext(&managerThread->context);
+}
+
+void dccthread_wait(dccthread_t *tid) {
+  if(tid && currentThread) {
+    strncpy(currentThread->waitingFor, tid->name, sizeof(tid->name));
+    getcontext(&currentThread->context);
+
+    dlist_push_right(waitingThreads, currentThread);
+    dlist_push_right(threads, tid);
+
+    swapcontext(&currentThread->context, &managerThread->context);
+  } else if (tid) {
+    dlist_push_right(threads, tid);
+  } else {
+    setcontext(&managerThread->context);
+  }
 }
