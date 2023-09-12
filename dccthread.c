@@ -1,9 +1,15 @@
+#define _POSIX_C_SOURCE 199309L
+
 #include "dccthread.h"
 #include "dlist.h"
 #include <ucontext.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <signal.h>
+
+#define TIMER_INTERVAL_NS 10000000
 
 struct dccthread {
   ucontext_t context;
@@ -14,11 +20,9 @@ struct dccthread {
 };
 
 struct dlist *threads;
-struct dlist *concludedThreads;
 struct dlist *waitingThreads;
 dccthread_t *managerThread = NULL;
 dccthread_t *currentThread = NULL;
-
 
 void managerFunction(int running) {
   while (running) {
@@ -32,10 +36,41 @@ void managerFunction(int running) {
   }
 }
 
+void timerHandler(int signum, siginfo_t *info, void *context) {
+  dccthread_yield();
+}
+
+void setupTimer() {
+  struct sigevent sev;
+  timer_t timerid;
+  struct itimerspec its;
+  struct sigaction sa;
+
+  // sinal do temporizador
+  sa.sa_flags = SA_SIGINFO;
+  sa.sa_sigaction = timerHandler;
+  sigemptyset(&sa.sa_mask);
+  sigaction(SIGALRM, &sa, NULL);
+
+  // parâmetros do temporizador
+  sev.sigev_notify = SIGEV_SIGNAL;
+  sev.sigev_signo = SIGALRM;
+  sev.sigev_value.sival_ptr = &timerid;
+  timer_create(CLOCK_REALTIME, &sev, &timerid);
+
+  // configurar temporizador
+  its.it_value.tv_sec = 0;
+  its.it_value.tv_nsec = TIMER_INTERVAL_NS;
+  its.it_interval.tv_sec = 0;
+  its.it_interval.tv_nsec = TIMER_INTERVAL_NS;
+  timer_settime(timerid, 0, &its, NULL);
+}
+
 void dccthread_init(void (*func)(int), int param) {
   threads = dlist_create();
-  concludedThreads = dlist_create();
   waitingThreads = dlist_create();
+
+  setupTimer();
 
   managerThread = dccthread_create("manager", &managerFunction, 1);
   dlist_pop_right(threads);
@@ -102,7 +137,6 @@ int waitingCompare(const void *thread, const void *threadName, void *userdata) {
 
 void dccthread_exit(void) {
   getcontext(&currentThread->context);
-  dlist_push_right(concludedThreads, currentThread);
 
   dccthread_t *waitingThread = dlist_find_remove(waitingThreads, currentThread, waitingCompare, NULL);
   if(waitingThread) {
@@ -127,3 +161,4 @@ void dccthread_wait(dccthread_t *tid) {
     setcontext(&managerThread->context);
   }
 }
+
