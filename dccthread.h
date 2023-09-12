@@ -11,7 +11,7 @@ typedef struct dccthread dccthread_t;
 /* `dccthread_init` initializes any state necessary for the
  * threadling library and starts running `func`.  this function
  * never returns. */
-void dccthread_init(void (*func)(int), int param);
+void dccthread_init(void (*func)(int), int param) __attribute__((noreturn));
 
 /* on success, `dccthread_create` allocates and returns a thread
  * handle.  returns `NULL` on failure.  the new thread will execute

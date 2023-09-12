@@ -24,8 +24,24 @@ struct dlist *waitingThreads;
 dccthread_t *managerThread = NULL;
 dccthread_t *currentThread = NULL;
 
+struct sigevent sev;
+struct itimerspec its;
+timer_t timerid;
+sigset_t signal_mask;
+
+void blockSignals() {
+  sigemptyset(&signal_mask);
+  sigaddset(&signal_mask, SIGALRM); // Bloqueie o sinal do temporizador ou outros sinais necessários
+  sigprocmask(SIG_BLOCK, &signal_mask, NULL);
+}
+
+void unblockSignals() {
+  sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
+  timer_settime(timerid, 0, &its, NULL);
+}
+
 void managerFunction(int running) {
-  while (running) {
+  if (running) {
     if(!dlist_empty(threads)) {
       dccthread_t *thread = dlist_pop_left(threads);
       currentThread = thread;
@@ -36,29 +52,24 @@ void managerFunction(int running) {
   }
 }
 
-void timerHandler(int signum, siginfo_t *info, void *context) {
+void timerHandler(int signo, siginfo_t *info, void *context) {
   dccthread_yield();
 }
 
 void setupTimer() {
-  struct sigevent sev;
-  timer_t timerid;
-  struct itimerspec its;
+  // configura o tratador de sinais para o temporizador
   struct sigaction sa;
-
-  // sinal do temporizador
   sa.sa_flags = SA_SIGINFO;
   sa.sa_sigaction = timerHandler;
   sigemptyset(&sa.sa_mask);
   sigaction(SIGALRM, &sa, NULL);
 
-  // parâmetros do temporizador
+  // cria o temporizador
   sev.sigev_notify = SIGEV_SIGNAL;
   sev.sigev_signo = SIGALRM;
-  sev.sigev_value.sival_ptr = &timerid;
   timer_create(CLOCK_REALTIME, &sev, &timerid);
 
-  // configurar temporizador
+  // configura o intervalo do temporizador (10 ms)
   its.it_value.tv_sec = 0;
   its.it_value.tv_nsec = TIMER_INTERVAL_NS;
   its.it_interval.tv_sec = 0;
@@ -67,21 +78,24 @@ void setupTimer() {
 }
 
 void dccthread_init(void (*func)(int), int param) {
-  threads = dlist_create();
-  waitingThreads = dlist_create();
+  while(1) {
+    threads = dlist_create();
+    waitingThreads = dlist_create();
+    
+    setupTimer();
 
-  setupTimer();
+    managerThread = dccthread_create("manager", &managerFunction, 1);
+    dlist_pop_right(threads);
 
-  managerThread = dccthread_create("manager", &managerFunction, 1);
-  dlist_pop_right(threads);
+    dccthread_create("main", func, param);
 
-  dccthread_create("main", func, param);
-
-  dccthread_yield();
+    dccthread_yield();
+  }
 }
 
 dccthread_t * dccthread_create(const char *name, void (*func)(int ), int param) {
-  
+  blockSignals();
+
   dccthread_t *newThread = malloc(sizeof(dccthread_t));
   if(!newThread) {
     printf("Failed to create a new thread.\n");
@@ -97,14 +111,14 @@ dccthread_t * dccthread_create(const char *name, void (*func)(int ), int param) 
   newThread->context.uc_stack.ss_sp = malloc(THREAD_STACK_SIZE);
   // define o tamanho da pilha do contexto da thread
   newThread->context.uc_stack.ss_size = THREAD_STACK_SIZE;
-
-  makecontext(&newThread->context, (void (*)(void))func, 1, param);
-
   strncpy(newThread->name, name, sizeof(newThread->name));
+  makecontext(&newThread->context, (void (*)(void))func, 1, param);
 
   dlist_push_right(threads, newThread);
 
   return newThread;
+
+  unblockSignals();
 }
 
 void dccthread_yield(void) {
@@ -132,7 +146,7 @@ int waitingCompare(const void *thread, const void *threadName, void *userdata) {
   const dccthread_t *threadPtr = (const dccthread_t *)thread;
   const char *name = (const char *)threadName;
 
-  return (threadPtr->waitingFor == name);
+  return strcmp(threadPtr->waitingFor, name) == 0;
 }
 
 void dccthread_exit(void) {
@@ -162,3 +176,49 @@ void dccthread_wait(dccthread_t *tid) {
   }
 }
 
+struct TimerInfo {
+  timer_t timerid;
+  dccthread_t *thread;
+};
+
+void wakeUpThread(int signo, siginfo_t *info, void *context) {
+  struct TimerInfo *timerInfo = (struct TimerInfo *)info->si_value.sival_ptr;
+
+  dlist_push_right(threads, timerInfo->thread);
+  
+  timer_delete(timerInfo->timerid);
+
+  swapcontext(&currentThread->context, &managerThread->context);
+}
+
+void dccthread_sleep(struct timespec ts) {
+  struct sigevent sev;
+  timer_t timerid;
+  struct itimerspec its;
+  struct sigaction sa;
+  struct TimerInfo timerInfo;
+
+  getcontext(&currentThread->context);
+  timerInfo.thread = currentThread;
+
+  // sinal do temporizador
+  sa.sa_flags = SA_SIGINFO;
+  sa.sa_sigaction = wakeUpThread;
+  sigemptyset(&sa.sa_mask);
+  sigaction(SIGALRM, &sa, NULL);
+
+  // parâmetros do temporizador
+  sev.sigev_notify = SIGEV_SIGNAL;
+  sev.sigev_signo = SIGALRM;
+  sev.sigev_value.sival_ptr = &timerInfo;
+
+  timer_create(CLOCK_REALTIME, &sev, &timerid);
+  timerInfo.timerid = timerid;
+
+  // configurar temporizador
+  its.it_value.tv_sec = ts.tv_sec;
+  its.it_value.tv_nsec = 0;
+  its.it_interval.tv_sec = ts.tv_sec;
+  its.it_interval.tv_nsec = 0;
+  timer_settime(timerid, 0, &its, NULL);
+}
