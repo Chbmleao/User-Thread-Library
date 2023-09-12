@@ -35,9 +35,11 @@ void blockSignals() {
 
 void unblockSignals() {
   sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
+  timer_settime(timerid, 0, &its, NULL);
 }
 
 void managerFunction(int running) {
+  blockSignals();
   if (running) {
     if(!dlist_empty(threads)) {
       dccthread_t *thread = dlist_pop_left(threads);
@@ -47,6 +49,7 @@ void managerFunction(int running) {
       running = 0;
     }
   }
+  unblockSignals();
 }
 
 void timerHandler(int signo, siginfo_t *info, void *context) {
@@ -119,6 +122,7 @@ dccthread_t * dccthread_create(const char *name, void (*func)(int ), int param) 
 }
 
 void dccthread_yield(void) {
+  blockSignals();
   if(currentThread) {
     getcontext(&currentThread->context);
     dlist_push_right(threads, currentThread);
@@ -126,6 +130,7 @@ void dccthread_yield(void) {
   } else {
     setcontext(&managerThread->context);
   }
+  unblockSignals();
 };
 
 dccthread_t * dccthread_self(void) {
@@ -147,6 +152,7 @@ int waitingCompare(const void *thread, const void *threadName, void *userdata) {
 }
 
 void dccthread_exit(void) {
+  blockSignals();
   getcontext(&currentThread->context);
 
   dccthread_t *waitingThread = dlist_find_remove(waitingThreads, currentThread, waitingCompare, NULL);
@@ -155,9 +161,11 @@ void dccthread_exit(void) {
   }
 
   setcontext(&managerThread->context);
+  unblockSignals();
 }
 
 void dccthread_wait(dccthread_t *tid) {
+  blockSignals();
   if(tid && currentThread) {
     strncpy(currentThread->waitingFor, tid->name, sizeof(tid->name));
     getcontext(&currentThread->context);
@@ -171,6 +179,7 @@ void dccthread_wait(dccthread_t *tid) {
   } else {
     setcontext(&managerThread->context);
   }
+  unblockSignals();
 }
 
 struct TimerInfo {
