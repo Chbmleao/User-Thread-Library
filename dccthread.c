@@ -183,7 +183,7 @@ void dccthread_wait(dccthread_t *tid) {
 }
 
 struct TimerInfo {
-  timer_t timerid;
+  timer_t *timerid;
   dccthread_t *thread;
 };
 
@@ -192,39 +192,41 @@ void wakeUpThread(int signo, siginfo_t *info, void *context) {
 
   dlist_push_right(threads, timerInfo->thread);
   
-  timer_delete(timerInfo->timerid);
+  timer_delete(*(timerInfo->timerid));
 
   swapcontext(&currentThread->context, &managerThread->context);
 }
 
 void dccthread_sleep(struct timespec ts) {
-  struct sigevent sev;
-  timer_t timerid;
-  struct itimerspec its;
-  struct sigaction sa;
+  timer_t sleeptimerid;
   struct TimerInfo timerInfo;
 
   getcontext(&currentThread->context);
   timerInfo.thread = currentThread;
 
   // sinal do temporizador
-  sa.sa_flags = SA_SIGINFO;
-  sa.sa_sigaction = wakeUpThread;
-  sigemptyset(&sa.sa_mask);
-  sigaction(SIGALRM, &sa, NULL);
+  struct sigaction sleepsa;
+  sleepsa.sa_flags = SA_SIGINFO;
+  sleepsa.sa_sigaction = wakeUpThread;
+  sigemptyset(&sleepsa.sa_mask);
+  sigaction(SIGALRM, &sleepsa, NULL);
 
   // parâmetros do temporizador
-  sev.sigev_notify = SIGEV_SIGNAL;
-  sev.sigev_signo = SIGALRM;
-  sev.sigev_value.sival_ptr = &timerInfo;
+  struct sigevent sleepsev;
+  sleepsev.sigev_notify = SIGEV_SIGNAL;
+  sleepsev.sigev_signo = SIGALRM;
+  sleepsev.sigev_value.sival_ptr = &timerInfo;
 
-  timer_create(CLOCK_REALTIME, &sev, &timerid);
-  timerInfo.timerid = timerid;
+  timer_create(CLOCK_REALTIME, &sleepsev, &sleeptimerid);
+  timerInfo.timerid = &sleeptimerid;
 
   // configurar temporizador
-  its.it_value.tv_sec = ts.tv_sec;
-  its.it_value.tv_nsec = 0;
-  its.it_interval.tv_sec = ts.tv_sec;
-  its.it_interval.tv_nsec = 0;
-  timer_settime(timerid, 0, &its, NULL);
+  struct itimerspec sleepits;
+  sleepits.it_value.tv_sec = ts.tv_sec;
+  sleepits.it_value.tv_nsec = ts.tv_nsec;
+  sleepits.it_interval.tv_sec = ts.tv_sec;
+  sleepits.it_interval.tv_nsec = ts.tv_nsec;
+  timer_settime(sleeptimerid, 0, &sleepits, NULL);
+
+  swapcontext(&currentThread->context, &managerThread->context);
 }

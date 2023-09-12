@@ -14,8 +14,8 @@ grupo. Substitua marcadores `XX` pela contribuição de cada membro
 do grupo no desenvolvimento do trabalho (os valores devem somar
 100%).
 
-- Carlos Henrique Brito Malta Leão <chbmleao@ufmg.br> 90%
-- Vinicius Alves Faria Resende <viniciusfariaresende@gmail.com> 10%
+- Carlos Henrique Brito Malta Leão <chbmleao@ufmg.br> 50%
+- Vinicius Alves Faria Resende <viniciusfariaresende@gmail.com> 50%
 
 3. Referências bibliográficas
 
