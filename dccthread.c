@@ -30,14 +30,11 @@ timer_t timerid;
 sigset_t signal_mask;
 
 void blockSignals() {
-  sigemptyset(&signal_mask);
-  sigaddset(&signal_mask, SIGALRM); // Bloqueie o sinal do temporizador ou outros sinais necessários
   sigprocmask(SIG_BLOCK, &signal_mask, NULL);
 }
 
 void unblockSignals() {
   sigprocmask(SIG_UNBLOCK, &signal_mask, NULL);
-  timer_settime(timerid, 0, &its, NULL);
 }
 
 void managerFunction(int running) {
