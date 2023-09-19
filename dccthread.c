@@ -116,9 +116,8 @@ dccthread_t * dccthread_create(const char *name, void (*func)(int ), int param) 
 
   dlist_push_right(threads, newThread);
 
-  return newThread;
-
   unblockSignals();
+  return newThread;
 }
 
 void dccthread_yield(void) {
@@ -187,7 +186,7 @@ struct TimerInfo {
   dccthread_t *thread;
 };
 
-void wakeUpThread(int signo, siginfo_t *info, void *context) {
+void wakeUpThread(int _signo, siginfo_t *info, void *_context) {
   struct TimerInfo *timerInfo = (struct TimerInfo *)info->si_value.sival_ptr;
 
   dlist_push_right(threads, timerInfo->thread);
